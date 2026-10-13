@@ -3,35 +3,41 @@ import User from '../models/User.js';
 
 // Route protection middleware (Logged in users only)
 export const protect = async (req, res, next) => {
+  if (!process.env.JWT_SECRET) {
+    console.error('FATAL ERROR: JWT_SECRET environment variable is missing.');
+    return res.status(500).json({ message: 'Server configuration error: JWT secret not defined.' });
+  }
+
   let token;
 
-  if (
+  // 1. Check HTTP-Only Cookie
+  if (req.cookies && req.cookies.jwtToken) {
+    token = req.cookies.jwtToken;
+  }
+  // 2. Check Authorization Header fallback
+  else if (
     req.headers.authorization &&
     req.headers.authorization.startsWith('Bearer')
   ) {
-    try {
-      // Get token from header
-      token = req.headers.authorization.split(' ')[1];
-
-      // Verify token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretkeyforeventcrowdmanagementapp2026');
-
-      // Get user from the token
-      req.user = await User.findById(decoded.id).select('-password');
-
-      if (!req.user) {
-        return res.status(401).json({ message: 'Not authorized, user not found' });
-      }
-
-      next();
-    } catch (error) {
-      console.error('Auth error:', error);
-      return res.status(401).json({ message: 'Not authorized, token failed' });
-    }
+    token = req.headers.authorization.split(' ')[1];
   }
 
   if (!token) {
-    return res.status(401).json({ message: 'Not authorized, no token' });
+    return res.status(401).json({ message: 'Not authorized, no token provided' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = await User.findById(decoded.id).select('-password');
+
+    if (!req.user) {
+      return res.status(401).json({ message: 'Not authorized, user not found' });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Auth verification error:', error.message);
+    return res.status(401).json({ message: 'Not authorized, token validation failed' });
   }
 };
 

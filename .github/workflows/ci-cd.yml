@@ -1,0 +1,163 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+# Ensure concurrent runs on the same branch are cancelled to conserve resources
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # =================================================================
+  # Job 1: Lint, Integrity Checks & Application Build
+  # =================================================================
+  code-quality-and-build:
+    name: Code Quality & Build Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --- Frontend Checks ---
+      - name: Setup Node.js (Frontend)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'event crowd/frontend/package-lock.json'
+
+      - name: Install Frontend Dependencies
+        working-directory: 'event crowd/frontend'
+        run: npm ci --legacy-peer-deps
+
+      - name: Run Frontend Linter (Oxlint)
+        working-directory: 'event crowd/frontend'
+        run: npm run lint
+
+      - name: Build Frontend Application (Vite)
+        working-directory: 'event crowd/frontend'
+        run: npm run build
+
+      # --- Backend Checks ---
+      - name: Setup Node.js (Backend)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'event crowd/backend/package-lock.json'
+
+      - name: Install Backend Dependencies
+        working-directory: 'event crowd/backend'
+        run: npm ci
+
+      - name: Validate Backend Syntax & Entry Point
+        working-directory: 'event crowd/backend'
+        run: node --check server.js
+
+      - name: Report Automated Test Status
+        run: |
+          echo "### CI/CD Quality Gate Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend Linting**: PASSED (oxlint)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend Production Build**: PASSED (vite build)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend Syntax Check**: PASSED (node --check server.js)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Automated Unit Tests**: None configured in repository (no Jest/Mocha/Vitest detected). Adding tests is recommended for future test stages." >> $GITHUB_STEP_SUMMARY
+
+  # =================================================================
+  # Job 2: Docker Compose & Image Build Verification
+  # =================================================================
+  docker-validation:
+    name: Docker Build & Compose Validation
+    runs-on: ubuntu-latest
+    needs: code-quality-and-build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate Docker Compose Configuration
+        run: docker compose config
+
+      - name: Build Backend Docker Image (Validation)
+        uses: docker/build-push-action@v6
+        with:
+          context: "./event crowd"
+          file: "./event crowd/backend/Dockerfile"
+          push: false
+          tags: ecms-backend:ci-check
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build Frontend Docker Image (Validation)
+        uses: docker/build-push-action@v6
+        with:
+          context: "./event crowd/frontend"
+          file: "./event crowd/frontend/Dockerfile"
+          push: false
+          tags: ecms-frontend:ci-check
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  # =================================================================
+  # Job 3: Optional Publish to GitHub Container Registry (GHCR)
+  # Triggered only on successful pushes to main
+  # =================================================================
+  publish-images:
+    name: Publish Images to GHCR
+    runs-on: ubuntu-latest
+    needs: [code-quality-and-build, docker-validation]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare Image Repository Names
+        id: image-names
+        run: |
+          # Lowercase the repository owner and name for GHCR compliance
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "backend_repo=ghcr.io/${REPO_OWNER}/ecms-backend" >> $GITHUB_OUTPUT
+          echo "frontend_repo=ghcr.io/${REPO_OWNER}/ecms-frontend" >> $GITHUB_OUTPUT
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Build & Publish Backend Image to GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: "./event crowd"
+          file: "./event crowd/backend/Dockerfile"
+          push: true
+          tags: |
+            ${{ steps.image-names.outputs.backend_repo }}:latest
+            ${{ steps.image-names.outputs.backend_repo }}:${{ steps.image-names.outputs.sha_short }}
+          cache-from: type=gha,scope=backend
+
+      - name: Build & Publish Frontend Image to GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: "./event crowd/frontend"
+          file: "./event crowd/frontend/Dockerfile"
+          push: true
+          tags: |
+            ${{ steps.image-names.outputs.frontend_repo }}:latest
+            ${{ steps.image-names.outputs.frontend_repo }}:${{ steps.image-names.outputs.sha_short }}
+          cache-from: type=gha,scope=frontend

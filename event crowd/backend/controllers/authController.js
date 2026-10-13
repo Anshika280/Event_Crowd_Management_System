@@ -3,8 +3,21 @@ import jwt from 'jsonwebtoken';
 
 // Generate JWT helper
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET || 'supersecretkeyforeventcrowdmanagementapp2026', {
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET environment variable is missing.');
+  }
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: '30d',
+  });
+};
+
+// Helper to set HTTP-only cookie
+const setAuthCookie = (res, token) => {
+  res.cookie('jwtToken', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   });
 };
 
@@ -13,7 +26,7 @@ const generateToken = (id) => {
 // @access  Public
 export const registerUser = async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Please fill all required fields' });
@@ -25,8 +38,9 @@ export const registerUser = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Set role (restrict admin assignment in production unless specifically requested, but for local crowd control testing we let them specify)
-    const userRole = role === 'admin' ? 'admin' : 'user';
+    // Security Hardening: All public registrations are strictly assigned 'user' role.
+    // Admin accounts must be created via seed scripts or database administration.
+    const userRole = 'user';
 
     const user = await User.create({
       name,
@@ -36,12 +50,14 @@ export const registerUser = async (req, res) => {
     });
 
     if (user) {
+      const token = generateToken(user._id);
+      setAuthCookie(res, token);
       res.status(201).json({
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
-        token: generateToken(user._id),
+        token,
       });
     } else {
       res.status(400).json({ message: 'Invalid user data' });
@@ -65,12 +81,14 @@ export const loginUser = async (req, res) => {
     const user = await User.findOne({ email });
 
     if (user && (await user.matchPassword(password))) {
+      const token = generateToken(user._id);
+      setAuthCookie(res, token);
       res.json({
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
-        token: generateToken(user._id),
+        token,
       });
     } else {
       res.status(401).json({ message: 'Invalid email or password' });
@@ -79,3 +97,4 @@ export const loginUser = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+

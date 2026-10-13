@@ -17,6 +17,9 @@ const registrationSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
+    ticketToken: {
+      type: String, // Cryptographically signed JWT passport token for gate scanners
+    },
     checkedIn: {
       type: Boolean,
       default: false,
@@ -35,9 +38,13 @@ const registrationSchema = new mongoose.Schema(
     },
     paymentId: {
       type: String,
+      unique: true,
+      sparse: true,
     },
     orderId: {
       type: String,
+      unique: true,
+      sparse: true,
     },
     status: {
       type: String,

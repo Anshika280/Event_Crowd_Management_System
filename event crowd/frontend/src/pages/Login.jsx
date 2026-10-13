@@ -11,7 +11,7 @@ const Login = ({ setView }) => {
   const [localError, setLocalError] = useState('');
   const [localSuccess, setLocalSuccess] = useState('');
 
-  const { login, register, logout, loading } = useAuth();
+  const { login, register, loading } = useAuth();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -26,6 +26,15 @@ const Login = ({ setView }) => {
       setRole(roleParam);
     }
   }, []);
+
+  // Reset form fields when mode or role changes to ensure clean entry
+  useEffect(() => {
+    setName('');
+    setEmail('');
+    setPassword('');
+    setLocalError('');
+    setLocalSuccess('');
+  }, [isSignUp, role]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -74,6 +83,26 @@ const Login = ({ setView }) => {
         boxShadow: '0 15px 35px rgba(255, 65, 108, 0.15)'
       }}>
         
+        {/* Role Tabs */}
+        <div className="tabs-header" style={{ marginBottom: '1.5rem', justifyContent: 'center' }}>
+          <button 
+            type="button"
+            className={`tab-btn ${role === 'user' ? 'active' : ''}`}
+            onClick={() => setRole('user')}
+            style={{ flex: 1, textAlign: 'center' }}
+          >
+            Attendee Portal
+          </button>
+          <button 
+            type="button"
+            className={`tab-btn ${role === 'admin' ? 'active' : ''}`}
+            onClick={() => setRole('admin')}
+            style={{ flex: 1, textAlign: 'center' }}
+          >
+            Admin Portal
+          </button>
+        </div>
+
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
           <h2 style={{ fontSize: '2rem', fontWeight: 800 }}>
@@ -192,9 +221,28 @@ const Login = ({ setView }) => {
           </button>
         </form>
 
+        {/* Toggle Mode */}
+        <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+            {isSignUp ? "Already have an account? " : "Don't have an account? "}
+            <span 
+              onClick={() => setIsSignUp(!isSignUp)} 
+              style={{ 
+                color: 'var(--primary-start)', 
+                cursor: 'pointer', 
+                fontWeight: 600,
+                textDecoration: 'underline',
+                marginLeft: '0.25rem'
+              }}
+            >
+              {isSignUp ? 'Sign In' : 'Sign Up'}
+            </span>
+          </p>
+        </div>
+
         {/* Help Note */}
         <div style={{ 
-          marginTop: '2.5rem', 
+          marginTop: '1.5rem', 
           borderTop: '1px solid var(--border-light)', 
           paddingTop: '1.5rem',
           textAlign: 'center'

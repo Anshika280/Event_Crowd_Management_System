@@ -1,0 +1,90 @@
+services:
+  # =================================================================
+  # Database Service: MongoDB
+  # =================================================================
+  mongodb:
+    image: mongo:7.0
+    container_name: ecms-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: eventcrowd
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - ecms-network
+    # IMPORTANT: MongoDB port 27017 is NOT exposed publicly on the host.
+    # It is accessible strictly within the internal ecms-network by the backend.
+    # Uncomment the following block only for direct local database debugging:
+    # ports:
+    #   - "127.0.0.1:27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # =================================================================
+  # Backend API & Socket.IO Service
+  # =================================================================
+  backend:
+    build:
+      context: "./event crowd"
+      dockerfile: backend/Dockerfile
+    container_name: ecms-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-5000}:5000"
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      MONGO_URI: mongodb://mongodb:27017/eventcrowd
+      JWT_SECRET: ${JWT_SECRET:-default_jwt_secret_please_change_in_production}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - ecms-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:5000/api-status', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # =================================================================
+  # Frontend React SPA Service (Nginx Reverse Proxy)
+  # =================================================================
+  frontend:
+    build:
+      context: "./event crowd/frontend"
+      dockerfile: Dockerfile
+    container_name: ecms-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - ecms-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+# =================================================================
+# Networks & Persistent Volumes
+# =================================================================
+networks:
+  ecms-network:
+    driver: bridge
+
+volumes:
+  mongo_data:
+    driver: local

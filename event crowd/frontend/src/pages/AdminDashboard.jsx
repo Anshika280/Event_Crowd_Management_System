@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import LiveCrowdWidget from '../components/LiveCrowdWidget';
+import { socket, joinEventRoom, leaveEventRoom } from '../socket';
 import { 
-  Users, Calendar, Ticket, CheckSquare, Plus, Edit2, Trash2, Search, X, RefreshCw
+  Users, Calendar, Ticket, CheckSquare, Plus, Edit2, Trash2, Search, X, RefreshCw, Radio
 } from 'lucide-react';
 
 const getTodayDateString = () => {
@@ -71,6 +72,7 @@ const AdminDashboard = () => {
   const [registrations, setRegistrations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [regSearch, setRegSearch] = useState('');
+  const [isSocketConnected, setIsSocketConnected] = useState(socket.connected);
 
   // Event modal creation state
   const [showEventModal, setShowEventModal] = useState(false);
@@ -138,16 +140,69 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     fetchSummaryAndEvents();
+
+    if (socket.connected) {
+      setIsSocketConnected(true);
+    } else {
+      socket.connect();
+    }
+
+    const onConnect = () => setIsSocketConnected(true);
+    const onDisconnect = () => setIsSocketConnected(false);
+
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+    };
   }, []);
 
   useEffect(() => {
     fetchRegistrations();
-    // Setup short-polling for live check-in and dashboard metrics updates (every 5 seconds)
-    const interval = setInterval(() => {
-      fetchRegistrations();
-      fetchSummaryAndEvents();
-    }, 5000);
-    return () => clearInterval(interval);
+
+    if (selectedEventId) {
+      joinEventRoom(selectedEventId);
+
+      const handleAttendanceUpdate = (data) => {
+        console.log('[AdminDashboard] Live attendance update received via Socket.IO:', data);
+        if (data.eventId === selectedEventId) {
+          // Update event currentCount
+          setEvents((prevEvents) =>
+            prevEvents.map((evt) =>
+              evt.eventId === data.eventId
+                ? { ...evt, currentCount: data.currentCount, capacityLimit: data.capacityLimit }
+                : evt
+            )
+          );
+
+          // Update registrations table
+          if (data.registration) {
+            setRegistrations((prevRegs) => {
+              const idx = prevRegs.findIndex((r) => r._id === data.registration._id);
+              if (idx !== -1) {
+                const copy = [...prevRegs];
+                copy[idx] = { ...copy[idx], ...data.registration };
+                return copy;
+              } else {
+                return [data.registration, ...prevRegs];
+              }
+            });
+          }
+
+          // Update metrics summary
+          fetchSummaryAndEvents();
+        }
+      };
+
+      socket.on('attendanceUpdated', handleAttendanceUpdate);
+
+      return () => {
+        leaveEventRoom(selectedEventId);
+        socket.off('attendanceUpdated', handleAttendanceUpdate);
+      };
+    }
   }, [selectedEventId]);
 
   const handleOpenCreateModal = () => {
@@ -287,9 +342,18 @@ const AdminDashboard = () => {
       {/* Title Panel */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h1 style={{ fontSize: '2.25rem', fontWeight: 800 }}>
-            Crowd Control <span className="gradient-text">Console</span>
-          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <h1 style={{ fontSize: '2.25rem', fontWeight: 800 }}>
+              Crowd Control <span className="gradient-text">Console</span>
+            </h1>
+            <span 
+              className={`badge ${isSocketConnected ? 'badge-success' : 'badge-warning'}`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.75rem', fontSize: '0.75rem' }}
+            >
+              <Radio size={12} style={{ animation: isSocketConnected ? 'pulseGlow 1.5s infinite' : 'none' }} />
+              {isSocketConnected ? 'LIVE SOCKET STREAM' : 'SOCKET DISCONNECTED'}
+            </span>
+          </div>
           <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem', fontSize: '0.95rem' }}>
             Manage events, monitor live occupants at the venue, and view real-time ticket databases.
           </p>

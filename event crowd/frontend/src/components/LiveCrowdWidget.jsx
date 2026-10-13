@@ -38,9 +38,12 @@ const LiveCrowdWidget = ({ event, registrations = [] }) => {
       {/* Widget Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>
-            Live Occupancy Monitor
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span className="live-dot" style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981', animation: 'pulseGlow 1.5s infinite' }} />
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>
+              Real-Time Occupancy Monitor
+            </span>
+          </div>
           <h3 style={{ fontSize: '1.25rem', marginTop: '0.15rem' }}>{title}</h3>
         </div>
         <div>

@@ -27,9 +27,21 @@ const eventSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    reservedCount: {
+      type: Number,
+      default: 0, // Pending/reserved tickets (prevents booking race condition)
+    },
+    confirmedCount: {
+      type: Number,
+      default: 0, // Successfully issued/paid tickets
+    },
+    checkedInCount: {
+      type: Number,
+      default: 0, // Attendees currently inside venue
+    },
     currentCount: {
       type: Number,
-      default: 0, // Number of currently checked-in users at the venue
+      default: 0, // Number of currently checked-in users at venue (retained for backward compatibility)
     },
     category: {
       type: String,

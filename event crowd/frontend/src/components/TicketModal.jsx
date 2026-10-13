@@ -9,9 +9,11 @@ const TicketModal = ({ registration, onClose }) => {
   const userEmail = registration.attendeeEmail || registration.user?.email || '';
   const userPhone = registration.attendeePhone || '';
 
+  const qrPayload = registration.ticketToken || ticketCode;
+
   useEffect(() => {
-    if (ticketCode) {
-      QRCode.toDataURL(ticketCode, {
+    if (qrPayload) {
+      QRCode.toDataURL(qrPayload, {
         width: 180,
         margin: 1,
         color: {
@@ -22,7 +24,7 @@ const TicketModal = ({ registration, onClose }) => {
         .then((url) => setQrUrl(url))
         .catch((err) => console.error('QR code generation failed:', err));
     }
-  }, [ticketCode]);
+  }, [qrPayload]);
 
   const formatDate = (dateString) => {
     const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
